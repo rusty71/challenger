@@ -1,31 +1,25 @@
-#include <tachometer.h>
+#include <sfreed.h>
 
-TACHOMETER wheel_rev;
-int LED = 15;
-
-uint16_t prev;
+SFREED sf;
+//callback called from INT1 ISR. Should be handled as fast as possible
+//No delay() and Serial()
+void SF(void) {
+	Serial.print("detect : ");
+	Serial.println(sf.get());
+}	
 
 void setup()
 {
-	//need to explicity call begin() because constructor is not called?!? FIXME
-	wheel_rev.begin(36);
 	Serial.begin(115200);
-	delay(100);
-	Serial.println("Starting...");
-	delay(100);
-	prev = wheel_rev.get();
-
+	Serial.println("Start Finish Reed switch test");
+	delay(1000);
+	sf.begin();
+	sf.attach(SF);
 }
 
+uint16_t prev_count = 0;
 
-void loop()
-{
-	uint16_t val;
-	if( (val = wheel_rev.get()) != prev) {
-		prev = val;
-		Serial.println(val);
-		if(val > 25)
-			wheel_rev.reset();
-	}
+void loop() {
+	Serial.println("waiting for SF");
+	delay(1000);
 }
-
