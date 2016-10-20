@@ -1,0 +1,10 @@
+{
+  "builtInLibrariesFolders": "/usr/local/share/arduino/libraries",
+  "customBuildProperties": "build.warn_data_percentage=75",
+  "fqbn": "Moteino:avr:MoteinoMEGA",
+  "hardwareFolders": "/usr/local/share/arduino/hardware,/home/jeroen/dev/moteino/challenger/adxl345/hardware,/home/jeroen/.arduino15/packages",
+  "otherLibrariesFolders": "/home/jeroen/dev/moteino/challenger/adxl345/lib,/home/jeroen/dev/moteino/challenger/lib",
+  "runtime.ide.version": "10606",
+  "sketchLocation": "/home/jeroen/dev/moteino/challenger/adxl345/src/adxl345.ino",
+  "toolsFolders": "/usr/local/share/arduino//tools-builder,/usr/local/share/arduino//hardware/tools/avr"
+}
