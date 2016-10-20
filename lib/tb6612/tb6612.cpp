@@ -1,9 +1,9 @@
 #include "tb6612.h"
 
 //which pins connect to the tb6612
-const byte STBY = 10;	//Standby/Coast
-const byte PWMA = 3;	//Speed control. Must be an PWM enabled pin 
-const byte AIN1 = 15;	//control 1
+const byte STBY = 13;	//Standby/Coast
+const byte PWMA = 12;	//Speed control. Must be an PWM enabled pin 
+const byte AIN1 = 10;	//control 1
 const byte AIN2 = 14;	//Control 2
 
 TB6612::TB6612(){

@@ -1,7 +1,7 @@
 #include "blade.h"
 
 const byte T1_PIN = 1;
-int16_t position = 0;
+volatile int16_t position = 0;
 int skips = 0;
 uint8_t pina, previousX4;
 
