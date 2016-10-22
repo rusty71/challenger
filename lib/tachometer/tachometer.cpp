@@ -1,7 +1,9 @@
 #include "tachometer.h"
 
 const byte T1_PIN = 1;
-uint16_t revolutions;	//internal counter
+volatile uint16_t revolutions;	//internal revolution counter
+volatile uint32_t ticks = 0;	//maintains number of ticks from start
+volatile uint16_t this_ppr = 0;		//ticks per revolution
 
 //FIXME: why is the constructor not callled ?!?
 TACHOMETER::TACHOMETER(){/*TODO: not called when expected*/}
@@ -11,7 +13,7 @@ TACHOMETER::~TACHOMETER(){/*stop counting here*/}
 //TODO: check why this cant be done in the constructor
 void TACHOMETER::begin(uint16_t ppr){
     pinMode(T1_PIN, INPUT);
-
+	this_ppr = ppr;
 	TCNT1=0x00;          //Reset Timer 1 Counter.
 	TCCR1A=0x00;
 	TCCR1B=0x07;       // To set all pins CSn2,CSn1,CSn0 to use external clock source on Tn Pin. Clock on rising edge.
@@ -22,7 +24,7 @@ void TACHOMETER::begin(uint16_t ppr){
 	// Mode = CTC, Prescaler = 64
 	TIMSK1|=(1<<OCF1A);
 	revolutions = 0;
-	OCR1A = ppr;		//see datasheet chap.14
+	OCR1A = this_ppr;		//see datasheet chap.14
 }
 
 void TACHOMETER::reset(){
@@ -30,11 +32,16 @@ void TACHOMETER::reset(){
 }
 
 void TACHOMETER::set(uint16_t ppr){
-	OCR1A = ppr;		//see datasheet chap.14
+	this_ppr = ppr;
+	OCR1A = this_ppr;		//see datasheet chap.14
 }
 
 uint16_t TACHOMETER::get(){
 	return revolutions;
+}
+
+uint32_t TACHOMETER::getticks(){
+	return ticks+TCNT1;
 }
 
 //this is the ISR called when counter register (TCNT1) reaches the compare register (OCR1A)
@@ -43,4 +50,5 @@ uint16_t TACHOMETER::get(){
 ISR (TIMER1_COMPA_vect)
 {
 	revolutions++;
+	ticks = ticks + this_ppr;
 }
