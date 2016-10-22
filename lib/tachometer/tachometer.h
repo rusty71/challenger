@@ -7,6 +7,8 @@
 	The "compare match unit" of timer is setup to generate an interrupt every X pulses which can be set by tachometer::set(pulses per revolution)
 	If set 36 the internal counter is incremented exactly every wheel rotation
 	The main loop should poll the internal counter by tachometer::get(); to detect number of revolutions
+	* timer1 is used so pin 11 and 12 cannot be used for PWM. http://sphinx.mythic-beasts.com/~markt/ATmega-timers.html
+	* 10 also doesnt seem to work?
 	
 */
 
@@ -23,6 +25,7 @@ public:
     void reset(void);	//resets count to zero
     void set(uint16_t ppr);
     uint16_t get(void);		//returns revolutions
+    uint32_t getticks(void); //returns ticks ~32 per wheel revolution
 };
 
 #endif
