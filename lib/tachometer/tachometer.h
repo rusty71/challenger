@@ -24,6 +24,7 @@ public:
     void begin(uint16_t ppr);
     void reset(void);	//resets count to zero
     void set(uint16_t ppr);
+	void sim(uint16_t rev);
     uint16_t get(void);		//returns revolutions
     uint32_t getticks(void); //returns ticks ~32 per wheel revolution
 };
