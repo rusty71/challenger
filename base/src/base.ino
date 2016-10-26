@@ -51,6 +51,9 @@ void setup()
 	Serial.begin(115200);
 	if (!rf69.init())
 		Serial.println("init failed");
+	if (!dgram.init())
+		Serial.println("dgram init failed");
+
 	rf69.setModemConfig(RH_RF69::GFSK_Rb250Fd250); 
 	if (!rf69.setFrequency(915.3))
 		Serial.println("setFrequency failed");
@@ -115,28 +118,76 @@ void raceloop()
 uint8_t send_buf[64];
 uint8_t recv_buf[64];
 uint8_t len, to, from, id, flags;
+uint8_t seq = 0;
+uint32_t reply_timer = 0;
+uint16_t timeout = 0;
 
 uint8_t i=0;
+
+typedef enum state_tx_t {
+						INIT,
+						POLL,
+						WAITING,
+						REPLY,
+						SENDING
+					 };
+state_tx_t rfstate = INIT;
+void printmsg(uint8_t *msg)
+{
+	Serial.print("Received message for : ");
+	Serial.print(to);
+	Serial.print(" from : ");
+	Serial.print(from);
+	Serial.print(" with id : ");
+	Serial.print(id);
+	Serial.print(" and flags : ");
+	Serial.println(flags, BIN);
+}
+
+uint16_t reply_timeout = 200;	//ms
+uint16_t msg_count = 0;
+uint16_t loop_count = 0;
+
 void loop()
 {
-	Serial.println("Sending..");
-	dgram.setHeaderId(i++);
+	if(loop_count++%1000 == 0)
+		Serial.println(msg_count);
+	//~ delay(20);
+	//~ Serial.print("Loop..");
+	//~ Serial.println(rfstate);
+//	dgram.setHeaderId(i++);
 	//~ while(!dgram.waitPacketSent(1))
 		//~ ;
-	dgram.waitPacketSent();
-	dgram.sendto(send_buf, 20, RH_BROADCAST_ADDRESS);
-	if(dgram.waitAvailableTimeout(30)) { 	
-		if(dgram.recvfrom (recv_buf, &len, &from, &to, &id, &flags)) {
-			//~ Serial.print("Received message for : ");
-			//~ Serial.print(to);
-			//~ Serial.print(" from : ");
-			//~ Serial.print(from);
-			//~ Serial.print(" with id : ");
-			//~ Serial.print(id);
-			//~ Serial.print(" and flags : ");
-			//~ Serial.println(flags, BIN);
+	switch(rfstate) {
+		case INIT:
+			id = 0;
+		case POLL:
+			dgram.setHeaderId(seq);		//one car only for now
+			dgram.sendto(&send_buf[1], send_buf[0], CAR_ADDRESS);
+			send_buf[0] = 0;	//mark sent
+			reply_timer = millis();
+			rfstate = WAITING;
+			break;
+		case WAITING:
+			if(dgram.waitAvailableTimeout(1)) {
+				 	
+				if(dgram.recvfrom (recv_buf, &len, &from, &to, &id, &flags)) {
+					//printmsg(recv_buf);
+					seq++;	//next
+					msg_count++;
+				}
+				else
+					Serial.println("receive error");
+				rfstate = POLL;
+			}
+			else if((millis() - reply_timer) > reply_timeout ) {
+				timeout++;
+				Serial.println(seq);
+				rfstate = POLL;
+			}
+			break;
+		default:
+			Serial.println("help");	
+			break;
 		}
-	}
-	else
-		Serial.println("Timeout...");
 }

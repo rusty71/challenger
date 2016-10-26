@@ -20,12 +20,6 @@
 #define BASE_ADDRESS (0)
 #define CAR_ADDRESS (1)
 
-typedef enum state_t {
-						WAITING,
-						RESPONSE,
-						SENDING
-					 };
-state_t rfstate = WAITING;
 
 
 // Singleton instance of the radio driver
@@ -64,6 +58,9 @@ void setup()
 	//setup telemetry radio
 	if (!rf69.init())
 		Serial.println("init failed");
+	if (!dgram.init())
+		Serial.println("dgram init failed");
+
 	rf69.setModemConfig(RH_RF69::GFSK_Rb250Fd250); 
 	if (!rf69.setFrequency(915.3))
 		Serial.println("setFrequency failed");
@@ -160,90 +157,163 @@ void loop_seq()
 
 }
 
-
-//message queue ring buffer
 #define MAX_MSG_SIZE (64)
 #define MSG_BUF_SIZE (8)			//power of 2
 #define BUF_SIZE_MASK (0x07)		//power of 2
-uint8_t mesg_buf[MSG_BUF_SIZE][MAX_MSG_SIZE+1];	//first byte is length
-uint8_t head = 0, tail = 0;
 
-
-bool push_msg(uint8_t *msg, uint8_t len) {
-	if(((head + 1)&BUF_SIZE_MASK) == tail) {
-		Serial.println("Buffer full");
-		return false;	//buffer full
+class CLIENTCOMM { 
+public:
+	CLIENTCOMM(){
+		rfstate = INIT;
 	}
-	head = ((head + 1)&BUF_SIZE_MASK);
-	memcpy(&mesg_buf[head][1], msg, len);	
-	mesg_buf[head][0] = len;
-}
 
-uint8_t pop_msg(uint8_t *msg) {
-	uint8_t len;
+	~CLIENTCOMM(){};
+	bool send(uint8_t *msg, uint8_t len)
+	{
+		push_msg(msg, len);
+	}
 
-	if(head == tail)
-		return 0;
-	len = mesg_buf[tail][0];
-	memcpy(msg, &mesg_buf[tail][1], len);	
-	tail = (tail + 1)&BUF_SIZE_MASK;
-	return len;
-}
+	void schedule(void)
+	{
 
-//receive buffer and  parameters
-uint8_t send_buf[MAX_MSG_SIZE];
-uint8_t recv_buf[MAX_MSG_SIZE];
-uint8_t len, to, from, id, flags;
+		switch(rfstate) {
+			case INIT:
+			case WAITING:
+				if(dgram.waitAvailableTimeout(1)) {			//(0) doesn;t work?
+					len = MAX_MSG_SIZE;
+					if(dgram.recvfrom (recv_buf, &len, &from, &to, &id, &flags)) {
+						if( (((last_id+1)&0xff) != id) && (rfstate!=INIT)) {
+							if(last_id == id) {				//duplicate (or 256 lost..)
+								duplicate++;
+							}
+							else {							//missed
+								missed = missed + (((uint16_t)id+0xff)-last_id)&0xff;	//wrap!
+							}
+							last_id = last_id;	//resent last.
+						}
+						else {
+							last_id = id;
+						}
+//						printmsg(recv_buf);
+						rfstate = REPLY;		//reply state
+					}
+					else {
+						Serial.println("Receive error");
+					}
+				}
+				break;
+			case REPLY:
+				//copy next message to send
+				if(queue_len())
+					len = pop_msg(send_buf);
+				else
+					len = 0;
+			case REPEAT:				//repeat last message
+				rfstate = SENDING;		//send message
+			case SENDING:				//watch fallthrough from RESPONSE
+				if(dgram.waitPacketSent(1)) {	//ensure we can send without blocking FIXME:timeout = 0 fails
+					dgram.setHeaderId(last_id);
+					dgram.setHeaderFlags(queue_len());
+					dgram.sendto(send_buf, len, BASE_ADDRESS);
+					rfstate = WAITING;
+				}
+				else {
+					would_block++;
+				}
+				break;
+			default:
+				Serial.println("HELP");
+				break;
+		}
+	}
+	uint8_t head = 0, tail = 0;
+	uint8_t queue_len(void)
+	{
+		return ((head+MSG_BUF_SIZE)-tail)&BUF_SIZE_MASK;
+	}
+
+private:
+	typedef enum state_t {
+							INIT,
+							WAITING,
+							REPEAT,
+							REPLY,
+							SENDING
+						 };
+	state_t rfstate = INIT;
+		uint8_t len, to, from, id, flags;
+
+	//message queue ring buffer
+	uint8_t mesg_buf[MSG_BUF_SIZE][MAX_MSG_SIZE+1];	//first byte is length
+	//receive buffer and  parameters
+	uint8_t send_buf[MAX_MSG_SIZE];
+	uint8_t recv_buf[MAX_MSG_SIZE];
+
+	uint8_t last_id;			//last received id
+	uint16_t duplicate = 0;		//duplicate id's received
+	uint16_t missed = 0;		//missed packets. diffenence from duplicate?
+	uint16_t would_block = 0;	//would block on sendto()
+
+	
+	bool push_msg(uint8_t *msg, uint8_t len) {
+		if(((head + 1)&BUF_SIZE_MASK) == tail) {
+			Serial.println("Buffer full");
+			return false;	//buffer full
+		}
+		head = ((head + 1)&BUF_SIZE_MASK);
+		memcpy(&mesg_buf[head][1], msg, len);	
+		mesg_buf[head][0] = len;
+	}
+
+	uint8_t pop_msg(uint8_t *msg) {
+		uint8_t len;
+
+		if(head == tail)
+			return 0;
+		len = mesg_buf[tail][0];
+		memcpy(msg, &mesg_buf[tail][1], len);	
+		tail = (tail + 1)&BUF_SIZE_MASK;
+		return len;
+	}
+
+	void printmsg(uint8_t *msg)
+	{
+		Serial.print("Received message for : ");
+		Serial.print(to);
+		Serial.print(" from : ");
+		Serial.print(from);
+		Serial.print(" with id : ");
+		Serial.print(id);
+		Serial.print(" and flags : ");
+		Serial.println(flags, BIN);
+	}
+
+};
+
+CLIENTCOMM cm;
 uint8_t test_msg[5];	
 
 uint8_t i=0;
 void loop()
 {
-	dgram.setHeaderId(i++);
-	switch(rfstate) {
-		case WAITING:
-			if(dgram.waitAvailableTimeout(1)) {
-				len = MAX_MSG_SIZE;
-				if(dgram.recvfrom (recv_buf, &len, &from, &to, &id, &flags)) {
-				//~ if(dgram.recvfrom (recv_buf, &len, NULL, NULL, NULL, NULL)) {
-					//~ Serial.print("Received message for : ");
-					//~ Serial.print(to);
-					//~ Serial.print(" from : ");
-					//~ Serial.print(from);
-					//~ Serial.print(" with id : ");
-					//~ Serial.print(id);
-					//~ Serial.print(" and flags : ");
-					//~ Serial.println(flags, BIN);
-					rfstate = RESPONSE;		//response state
-				}
-				else {
-					Serial.println("Receive error");
-				}
-			}
-		break;
-		case RESPONSE:
-			//copy next message to send
-			len = pop_msg(send_buf);
-			Serial.print("message from queue :");
-			Serial.println(len);
-			rfstate = SENDING;		//send message
-		case SENDING:		//watch fallthrough from RESPONSE
-			if(dgram.waitPacketSent(1)) {	//ensure we can send without blocking FIXME:timeout = 0 fails
-				Serial.println("sending now");
-				dgram.sendto(send_buf, len, BASE_ADDRESS);
-				rfstate = WAITING;
-			}
-			else
-				Serial.println("cannot send, will block****************************************************************");
-		break;
-		default:
-			Serial.println("HELP");
-		break;
-	}
-	
+	i++;
+	//~ Serial.print("Loop..");
+	//~ Serial.println(rfstate);
+	//~ delay(20);
+
 	//emulate burst sent
-	if(i>250)
-		push_msg(test_msg, 4);
+	if(i>254) {
+		cm.send(test_msg, 4);
+		cm.send(test_msg, 4);
+		cm.send(test_msg, 4);
+		cm.send(test_msg, 4);
+		Serial.print(cm.head);
+		Serial.print(" : ");
+		Serial.print(cm.tail);
+		Serial.print(" : ");
+		Serial.println(cm.queue_len());
+	}	
+	cm.schedule();
+	cm.schedule();
 	//delay(1000);
 }
-
