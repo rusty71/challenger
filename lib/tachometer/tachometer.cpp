@@ -36,6 +36,10 @@ void TACHOMETER::set(uint16_t ppr){
 	OCR1A = this_ppr;		//see datasheet chap.14
 }
 
+void TACHOMETER::sim(uint16_t rev){
+	revolutions = rev;
+}
+
 uint16_t TACHOMETER::get(){
 	return revolutions;
 }
