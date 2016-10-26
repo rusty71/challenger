@@ -2,7 +2,7 @@
 
 const byte SF_PIN = 11;
 
-#define DEBOUNCE_MS 100
+#define DEBOUNCE_MS 500
 
 
 //only one callback possible
