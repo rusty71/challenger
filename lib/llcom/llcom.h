@@ -89,10 +89,12 @@ public:
 	//~ uint8_t head = 0, tail = 0;
 	//~ uint8_t queue_len(void);
 	void attach(commsCallback func);
+	bool push_msg(uint8_t *msg, uint8_t len);
+	uint8_t pop_msg(uint8_t *msg);
 	uint8_t seq;
 	uint32_t reply_timer = 0;
 	uint16_t timeout = 0;
-	uint16_t reply_timeout = 50;	//ms
+	uint16_t reply_timeout = 80;	//ms
 	uint16_t msg_count = 0;
 
 private:
@@ -106,14 +108,18 @@ private:
 	//receive buffer and  parameters
 	uint8_t send_buf[MAX_MSG_SIZE];
 	uint8_t recv_buf[MAX_MSG_SIZE];
+	//message queue ring buffer
+	uint8_t mesg_buf[MSG_BUF_SIZE][MAX_MSG_SIZE+1];	//first byte is length
 
 	uint8_t last_id;			//last received id
 	uint16_t duplicate = 0;		//duplicate id's received
 	uint16_t missed = 0;		//missed packets. diffenence from duplicate?
 	uint16_t would_block = 0;	//would block on sendto()
 
+	uint8_t head = 0, tail = 0;
+	uint8_t queue_len(void);	
 	
-	void printmsg(uint8_t *msg);
+	void printmsg(uint8_t *msg);	
 };
 
 
