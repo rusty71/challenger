@@ -110,9 +110,10 @@ comms_t comms;
 
 void recv(uint8_t *msg, uint8_t len)
 {
-	lls.send(ASCII, "msg received");
-	for(uint8_t i = 0; i < len; i++)
+	for(uint8_t i = 0; i < len; i++) {
 		Serial.print(msg[i], HEX);
+		Serial.print(" ");
+	}
 	Serial.println("");
 }
 
@@ -158,13 +159,13 @@ void loop()
 	lls.send((uint8_t*)&comms, sizeof(comms));
 	lls.schedule();	//wait for next segment
 
-#ifdef SSTANDALONE
-	if(tacho.get() >100){
+#ifdef STANDALONE
+	if(tacho.get() > 40){
 		tacho.sim(0);
 		SF_DETECT();
 	}
-	tacho.sim(tacho.get()+1);
-	delay(10);
+	//~ tacho.sim(tacho.get()+1);
+	//~ delay(10);
 #endif
 
 
