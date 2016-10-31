@@ -6,6 +6,7 @@
 #include <adxl345.h>
 #include <sfreed.h>
 #include <tachometer.h>
+#include <llcom.h>
 
 #define STANDALONE 1
 
@@ -17,27 +18,22 @@
 #define CAR_HIGH_SPEED (200)
 #endif //STANALONE
 
-#define BASE_ADDRESS (0)
-#define CAR_ADDRESS (1)
-
-
-
 // Singleton instance of the radio driver
 RH_RF69 rf69(4, 2); // For MoteinoMEGA https://lowpowerlab.com/shop/moteinomega
 //Unreliable addressable datagrams
 RHDatagram dgram(rf69, CAR_ADDRESS);
-
 //Singleton motor driver 
 TB6612 Motor;
 //Singleton blade guide 
 BLADE blade;
-//~ //Singleton accelerometer
+//Singleton accelerometer
 ADXL345 adxl345;
 //~ //Singleton Start Finish sensor
 SFREED sfreed;
-//~ //Singleton Tachometer
+//Singleton Tachometer
 TACHOMETER tacho;
-
+//Low latency slave
+LLSLAVE lls(&dgram);
 
 //~ //called from interrupt dont delay()
 void SF_DETECT(void)
@@ -71,7 +67,7 @@ void setup()
 	//encryption key
 	uint8_t key[] = { 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 						0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
-	rf69.setEncryptionKey(key);
+//	rf69.setEncryptionKey(key);
 
 	//setup motor
 	Motor.coast(0);
@@ -83,7 +79,9 @@ void setup()
 	//attach callback at every SF
 	sfreed.attach(SF_DETECT);
 
-	tacho.begin(36);		//every 18 ticks (~2mm/tick) increment segment position
+	tacho.begin(1);		//every 18 ticks (~2mm/tick) increment segment position
+
+	lls.attach(recv);
 
 	//current lap count (should be zero)
 	sfcount = sfreed.get();
@@ -100,6 +98,7 @@ void setup()
 }
 
 typedef struct {
+	message_t	type;
 	uint16_t	segment;
 	int16_t		blade_pos;
 	int16_t		xyz[3];
@@ -108,8 +107,21 @@ typedef struct {
 } comms_t;
 comms_t comms;
 
+
+void recv(uint8_t *msg, uint8_t len)
+{
+	lls.send(ASCII, "msg received");
+	for(uint8_t i = 0; i < len; i++)
+		Serial.print(msg[i], HEX);
+	Serial.println("");
+}
+
+uint8_t test_msg[5]={1,2,3,4,5};	
+
+uint8_t i=0;
+
 int16_t speed=CAR_SPEED;
-void loop_seq()
+void loop()
 {
 	
 	//collect data and send
@@ -139,11 +151,14 @@ void loop_seq()
 	//~ Serial.print("\t");
 	//~ Serial.println(comms.segment);
 
-	rf69.send((uint8_t*)&comms, sizeof(comms));
-	//waitPacketSent() not needed?
-	rf69.waitPacketSent();
+	//~ rf69.send((uint8_t*)&comms, sizeof(comms));
+	//~ rf69.waitPacketSent();
+	comms.type = SEQ;
+	lls.schedule();	//wait for next segment
+	lls.send((uint8_t*)&comms, sizeof(comms));
+	lls.schedule();	//wait for next segment
 
-#ifdef STANDALONE
+#ifdef SSTANDALONE
 	if(tacho.get() >100){
 		tacho.sim(0);
 		SF_DETECT();
@@ -152,168 +167,9 @@ void loop_seq()
 	delay(10);
 #endif
 
-	while(comms.segment == tacho.get());
-		;	//wait for next segment
 
-}
-
-#define MAX_MSG_SIZE (64)
-#define MSG_BUF_SIZE (8)			//power of 2
-#define BUF_SIZE_MASK (0x07)		//power of 2
-
-class CLIENTCOMM { 
-public:
-	CLIENTCOMM(){
-		rfstate = INIT;
-	}
-
-	~CLIENTCOMM(){};
-	bool send(uint8_t *msg, uint8_t len)
-	{
-		push_msg(msg, len);
-	}
-
-	void schedule(void)
-	{
-
-		switch(rfstate) {
-			case INIT:
-			case WAITING:
-				if(dgram.waitAvailableTimeout(1)) {			//(0) doesn;t work?
-					len = MAX_MSG_SIZE;
-					if(dgram.recvfrom (recv_buf, &len, &from, &to, &id, &flags)) {
-						if( (((last_id+1)&0xff) != id) && (rfstate!=INIT)) {
-							if(last_id == id) {				//duplicate (or 256 lost..)
-								duplicate++;
-							}
-							else {							//missed
-								missed = missed + (((uint16_t)id+0xff)-last_id)&0xff;	//wrap!
-							}
-							last_id = last_id;	//resent last.
-						}
-						else {
-							last_id = id;
-						}
-//						printmsg(recv_buf);
-						rfstate = REPLY;		//reply state
-					}
-					else {
-						Serial.println("Receive error");
-					}
-				}
-				break;
-			case REPLY:
-				//copy next message to send
-				if(queue_len())
-					len = pop_msg(send_buf);
-				else
-					len = 0;
-			case REPEAT:				//repeat last message
-				rfstate = SENDING;		//send message
-			case SENDING:				//watch fallthrough from RESPONSE
-				if(dgram.waitPacketSent(1)) {	//ensure we can send without blocking FIXME:timeout = 0 fails
-					dgram.setHeaderId(last_id);
-					dgram.setHeaderFlags(queue_len());
-					dgram.sendto(send_buf, len, BASE_ADDRESS);
-					rfstate = WAITING;
-				}
-				else {
-					would_block++;
-				}
-				break;
-			default:
-				Serial.println("HELP");
-				break;
-		}
-	}
-	uint8_t head = 0, tail = 0;
-	uint8_t queue_len(void)
-	{
-		return ((head+MSG_BUF_SIZE)-tail)&BUF_SIZE_MASK;
-	}
-
-private:
-	typedef enum state_t {
-							INIT,
-							WAITING,
-							REPEAT,
-							REPLY,
-							SENDING
-						 };
-	state_t rfstate = INIT;
-		uint8_t len, to, from, id, flags;
-
-	//message queue ring buffer
-	uint8_t mesg_buf[MSG_BUF_SIZE][MAX_MSG_SIZE+1];	//first byte is length
-	//receive buffer and  parameters
-	uint8_t send_buf[MAX_MSG_SIZE];
-	uint8_t recv_buf[MAX_MSG_SIZE];
-
-	uint8_t last_id;			//last received id
-	uint16_t duplicate = 0;		//duplicate id's received
-	uint16_t missed = 0;		//missed packets. diffenence from duplicate?
-	uint16_t would_block = 0;	//would block on sendto()
-
-	
-	bool push_msg(uint8_t *msg, uint8_t len) {
-		if(((head + 1)&BUF_SIZE_MASK) == tail) {
-			Serial.println("Buffer full");
-			return false;	//buffer full
-		}
-		head = ((head + 1)&BUF_SIZE_MASK);
-		memcpy(&mesg_buf[head][1], msg, len);	
-		mesg_buf[head][0] = len;
-	}
-
-	uint8_t pop_msg(uint8_t *msg) {
-		uint8_t len;
-
-		if(head == tail)
-			return 0;
-		len = mesg_buf[tail][0];
-		memcpy(msg, &mesg_buf[tail][1], len);	
-		tail = (tail + 1)&BUF_SIZE_MASK;
-		return len;
-	}
-
-	void printmsg(uint8_t *msg)
-	{
-		Serial.print("Received message for : ");
-		Serial.print(to);
-		Serial.print(" from : ");
-		Serial.print(from);
-		Serial.print(" with id : ");
-		Serial.print(id);
-		Serial.print(" and flags : ");
-		Serial.println(flags, BIN);
-	}
-
-};
-
-CLIENTCOMM cm;
-uint8_t test_msg[5];	
-
-uint8_t i=0;
-void loop()
-{
-	i++;
-	//~ Serial.print("Loop..");
-	//~ Serial.println(rfstate);
-	//~ delay(20);
-
-	//emulate burst sent
-	if(i>254) {
-		cm.send(test_msg, 4);
-		cm.send(test_msg, 4);
-		cm.send(test_msg, 4);
-		cm.send(test_msg, 4);
-		Serial.print(cm.head);
-		Serial.print(" : ");
-		Serial.print(cm.tail);
-		Serial.print(" : ");
-		Serial.println(cm.queue_len());
-	}	
-	cm.schedule();
-	cm.schedule();
-	//delay(1000);
+	while(comms.segment == tacho.get())
+		lls.schedule();	//wait for next segment
+	//~ lls.schedule();	//wait for next segment
+	//~ lls.schedule();	//wait for next segment
 }
