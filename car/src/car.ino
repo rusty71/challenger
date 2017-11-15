@@ -35,10 +35,12 @@ TACHOMETER tacho;
 //Low latency slave
 LLSLAVE lls(&dgram);
 
+volatile int sequencer[50];
+
 //~ //called from interrupt dont delay()
 void SF_DETECT(void)
 {
-	//reset position on SF detect
+	//~ //reset position on SF detect
 	blade.reset();
 	tacho.reset();
 }
@@ -46,6 +48,10 @@ void SF_DETECT(void)
 void setup() 
 {
 	uint16_t sfcount;
+
+	//fill sequencer with sane values first: TODO: remove
+	for(int i = 0; i <50; i++)
+		sequencer[i] = 100;
 
 	Serial.begin(115200);
 	Serial.println("calibrating...");
@@ -99,49 +105,52 @@ void setup()
 
 typedef struct {
 	message_t	type;
+	uint8_t		speed;
 	uint16_t	segment;
 	int16_t		blade_pos;
 	int16_t		xyz[3];
 	uint32_t	ticks;		//total ticks elapsed
 	uint32_t	millis;		//total number of milliseconds
-} comms_t;
+} __attribute__ ((packed)) comms_t;
 comms_t comms;
 
 
 void recv(uint8_t *msg, uint8_t len)
 {
-	for(uint8_t i = 0; i < len; i++) {
-		Serial.print(msg[i], HEX);
-		Serial.print(" ");
+	switch(msg[0]) {
+		case 3:
+			Serial.print("seq ");
+			Serial.print(msg[1]);
+			Serial.print(" ");
+			Serial.println(msg[2]);
+			sequencer[msg[1]] = msg[2];
+		break;
+		default:
+			for(uint8_t i = 0; i < len; i++) {
+				Serial.print(msg[i], HEX);
+				Serial.print(" ");
+			}
+			Serial.println("");
+		break;
 	}
-	Serial.println("");
 }
 
 uint8_t test_msg[5]={1,2,3,4,5};	
 
 uint8_t i=0;
 
-int16_t speed=CAR_SPEED;
+int speed=CAR_SPEED;
 void loop()
 {
-	
-	//collect data and send
-	comms.segment = tacho.get();
-	comms.segment = comms.segment*2;
-	if( ((comms.segment < 56) && (comms.segment > 35)) || ((comms.segment < 100) && (comms.segment > 80)) || ((comms.segment < 8) && (comms.segment > 0)))
-		speed = CAR_HIGH_SPEED;
-	else
-		speed = CAR_SPEED;
 
-	if((comms.segment < 63) && (comms.segment > 57))
-		Motor.brake(1);
-	else{
-		Motor.move(speed, 1);
-	}
 	comms.segment = tacho.get();
-	
-	//~ 40-60
-//~ 90-10
+
+	//get power from the sequencer
+	speed = sequencer[comms.segment];
+	Serial.println(comms.speed);
+	Motor.move(speed,1);
+
+	comms.speed = speed;
 	comms.blade_pos = blade.get();
 	adxl345.get(comms.xyz);
 	comms.ticks = tacho.getticks();
@@ -168,9 +177,9 @@ void loop()
 	//~ delay(10);
 #endif
 
+	delay(50);
 
-	while(comms.segment == tacho.get())
-		lls.schedule();	//wait for next segment
-	//~ lls.schedule();	//wait for next segment
-	//~ lls.schedule();	//wait for next segment
+	//~ while(comms.segment == tacho.get())
+		//~ lls.schedule();
+
 }

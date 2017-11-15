@@ -192,7 +192,7 @@ void LLMASTER::schedule(void)
 				slen = 0;
 				//~ delay(10);	//poll delay while nothing to send
 			}
-			if(!dgram->sendto(&send_buf[1], slen, CAR_ADDRESS)) {
+			if(!dgram->sendto(send_buf, slen, CAR_ADDRESS)) {
 				if(debug) Serial.print("X");
 			}
 			dgram->waitPacketSent();	//wait until send

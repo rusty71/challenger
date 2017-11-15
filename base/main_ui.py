@@ -8,9 +8,9 @@ import threading
 import serial
 import struct
 
-SEQ_FMT = "BHhhhhII"
+SEQ_FMT = "BBHhhhhII"
 
-UP_FMT = "BHhhhhII"
+#UP_FMT = "BHhhhhII"
 
 class LLCom(threading.Thread):
 	ESC = 0x7c
@@ -97,16 +97,19 @@ class TelemetryApp(QtGui.QMainWindow):
 			#~ slider.valueChanged.connect(self.sliderchange)
 			slider.connect(slider,QtCore.SIGNAL("valueChanged(int)"), self,QtCore.SLOT("valueChangedSlot(int)"))
 			slider.setMaximum(255)
+			slider.setValue(100)
 			self.SequenceSliders.addWidget(slider)
 		#set grid
 #		self.SequencePlotter.plotItem.showGrid(True, True, 0.7)
 		self.bufferSize = 50
 		#data store
 		self.blade_data = np.zeros(self.bufferSize)
+		self.speed_data = np.zeros(self.bufferSize)
 		self.x_data = np.zeros(self.bufferSize)
 		self.y_data = np.zeros(self.bufferSize)
 		#curves
 		self.blade_curve = self.SequencePlotter.plot(pen=pyqtgraph.hsvColor(1.0, sat=1.0, val=1.0, alpha=1.0))
+		self.speed_curve = self.SequencePlotter.plot(pen=pyqtgraph.hsvColor(0.3, sat=1.0, val=1.0, alpha=1.0))
 		self.x_curve = self.SequencePlotter.plot(pen=pyqtgraph.hsvColor(0.8, sat=1.0, val=0.5, alpha=1.0))
 		self.y_curve = self.SequencePlotter.plot(pen=pyqtgraph.hsvColor(0.6, sat=1.0, val=1.0, alpha=1.0))
 		#vertical follow line
@@ -123,19 +126,23 @@ class TelemetryApp(QtGui.QMainWindow):
 	def update(self, msg):
 		if msg[0] == 0:		#SEQ update message
 			if len(msg) > 0:
+				print([x.__str__() for x in msg])
 				try:
-					(msg_type, segment, blade, x, y, z, ticks, millis) = struct.unpack(SEQ_FMT, msg.__str__())
+					(msg_type, speed, segment, blade, x, y, z, ticks, millis) = struct.unpack(SEQ_FMT, msg[1:].__str__())
 					self.blade_data[segment] = blade
-					self.x_data[segment] = x
-					self.y_data[segment] = y
+					self.speed_data[segment] = speed/4.0
+					self.x_data[segment] = x/4.0
+					self.y_data[segment] = y/4.0
 					self.blade_curve.setData(self.blade_data)
+					self.speed_curve.setData(self.speed_data)
 					self.x_curve.setData(self.x_data)
 					self.y_curve.setData(self.y_data)
 					self.line.setValue(segment)
-					print(msg_type, segment, blade, x, y, z, ticks, millis)
+					print(msg_type, speed, segment, blade, x, y, z, ticks, millis)
 				except:
 					print("exception", len(msg), msg)
-
+		else:
+			print(msg)
 
 
 if __name__=="__main__":

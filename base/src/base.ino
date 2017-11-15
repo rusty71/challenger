@@ -36,7 +36,10 @@ void setup()
 	if (!dgram.init())
 		Serial.println("dgram init failed");
 
-	rf69.setModemConfig(RH_RF69::GFSK_Rb250Fd250); 
+
+	//~ rf69.setModemConfig(RH_RF69::GFSK_Rb250Fd250); 
+	rf69.setModemConfig(RH_RF69::FSK_Rb19_2Fd38_4); 
+	//~ rf69.setModemConfig(RH_RF69::OOK_Rb4_8Bw9_6); 
 	if (!rf69.setFrequency(915.3))
 		Serial.println("setFrequency failed");
 	rf69.setTxPower(14);
